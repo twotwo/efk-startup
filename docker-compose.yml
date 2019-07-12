@@ -1,0 +1,52 @@
+version: "3"
+services:
+  web:
+    image: nginx
+    ports:
+      - "10080:80"
+    links:
+      - fluentd
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: nginx.access
+  
+  fluentd:
+    build: ./fluentd
+    volumes:
+      - ./fluentd/conf:/fluentd/etc
+    links:
+      - elasticsearch
+    ports:
+      - 24224:24224
+      - 24224:24224/udp
+    restart: always
+
+  elasticsearch:
+    image: hub.infervision.com/vendor/elasticsearch:7.2.0
+    ports:
+      - 9200:9200
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=docker-cluster
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+  #      - xpack.security.enabled=true
+      - network.host=0.0.0.0
+      - cluster.initial_master_nodes=elasticsearch
+    ulimits:
+        memlock:
+            soft: -1
+            hard: -1
+    volumes:
+      - /opt/local/data/EFK/es_data:/usr/share/elasticsearch/data
+    restart: always
+
+  kibana:
+    image: hub.infervision.com/vendor/kibana:7.2.0
+    links:
+      - elasticsearch
+    ports:
+      - 5601:5601
+    restart: always
