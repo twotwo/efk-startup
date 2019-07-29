@@ -4,23 +4,20 @@ services:
     image: nginx
     ports:
       - "10080:80"
-    links:
-      - fluentd
-    logging:
-      driver: "fluentd"
-      options:
-        fluentd-address: localhost:24224
-        tag: nginx.access
   
-  fluentd:
-    build: ./fluentd
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.2.0
     volumes:
-      - ./fluentd/conf:/fluentd/etc
-    links:
-      - elasticsearch
-    ports:
-      - 24224:24224
-      - 24224:24224/udp
+      # config of filebeat
+      - ./filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro
+      # needed to persist filebeat tracking data :
+      - "filebeat_data:/usr/share/filebeat/data:rw"
+      # needed to access all docker logs (read only) :
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # needed to access additional informations about containers:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+    - strict.perms=false
     restart: always
 
   elasticsearch:
@@ -50,3 +47,7 @@ services:
     ports:
       - 5601:5601
     restart: always
+
+volumes:
+  # create a persistent volume for Filebeat
+  filebeat_data:

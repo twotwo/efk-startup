@@ -1,8 +1,4 @@
-# Fluentd 在 Docker 侧的日志收集与导出
-
-
-- [](https://docs.docker.com/config/containers/logging/fluentd/)
-
+# Docker 封装的 Elasticsearch/Kibana/Filebeat 日志收集与展示方案
 
 ## EFK Geting Started
 
