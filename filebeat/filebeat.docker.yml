@@ -1,0 +1,27 @@
+filebeat.config:
+  modules:
+    path: ${path.config}/modules.d/*.yml
+    reload.enabled: false
+
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: true
+
+filebeat.inputs:
+- type: container
+  enabled: true
+  stream: stdout
+  tags: ["json"]
+  include_lines: [.*HosCode.*']
+  exclude_lines: ['.*monitoring.*']
+  paths: 
+    - '/var/lib/docker/containers/*/*.log'
+
+output.console:
+  enabled: true
+  # pretty: true
+
+path.home: /tmp/beat
+path.data: /tmp/beat/data
+path.logs: /tmp/beat/log

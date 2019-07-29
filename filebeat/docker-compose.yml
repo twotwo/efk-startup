@@ -1,0 +1,61 @@
+version: "3"
+services:
+  web:
+    image: nginx
+    ports:
+      - "10080:80"
+  
+  filebeat:
+    container_name: filebeat
+    hostname: filebeat
+    #To read the docker socket
+    user: root 
+    image: docker.elastic.co/beats/filebeat:7.2.0
+    environment:
+      - ELASTICSEARCH_HOSTS=elasticsearch
+    volumes:
+      # config of filebeat
+      - ./filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro
+      # needed to persist filebeat tracking data :
+      - "filebeat_data:/usr/share/filebeat/data:rw"
+      # needed to access all docker logs (read only) :
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # needed to access additional informations about containers:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # command: filebeat -e -strict.perms=false
+    command: bash -c "filebeat -e -strict.perms=false >> logs/console.log 1>&1"
+    restart: always
+
+  # elasticsearch:
+  #   image: hub.infervision.com/vendor/elasticsearch:7.2.0
+  #   ports:
+  #     - 9200:9200
+  #   environment:
+  #     - node.name=elasticsearch
+  #     - cluster.name=docker-cluster
+  #     - bootstrap.memory_lock=true
+  #     - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+  # #      - xpack.security.enabled=true
+  #     - network.host=0.0.0.0
+  #     - cluster.initial_master_nodes=elasticsearch
+  #   ulimits:
+  #       memlock:
+  #           soft: -1
+  #           hard: -1
+  #   volumes:
+  #     - /opt/local/data/EFK/es_data:/usr/share/elasticsearch/data
+  #   restart: always
+
+  # kibana:
+  #   hostname: kibana
+  #   image: hub.infervision.com/vendor/kibana:7.2.0
+  #   links:
+  #     - elasticsearch
+  #   ports:
+  #     - 5601:5601
+  #   restart: always
+  #   depends_on: ['elasticsearch']
+
+volumes:
+  # create a persistent volume for Filebeat
+  filebeat_data:
