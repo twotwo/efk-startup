@@ -19,23 +19,26 @@ FROM base
 COPY --from=builder /install /usr/local
 # Need by filebeat
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories  && \
-        apk add --update --no-cache libc6-compat
+        apk add --update --no-cache libc6-compat tzdata &&\
+        ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 # Add alias
 ENV ENV="/root/.ashrc"
 RUN echo "alias ll='ls -l'" > "$ENV"
 
-# config of filebeat
-VOLUME /usr/share/filebeat
+ARG AMQP_URI="amqp://guest:guest@rabbitmq/"
+ENV AMQP_URI="${AMQP_URI}"
+
 # needed to access all docker logs (read only) :
 VOLUME /var/lib/docker/containers
 # needed to access additional informations about containers:
 VOLUME /var/run/docker.sock
 
-ADD supervisord.conf /etc/
-# COPY *.py /
+COPY supervisord.conf /etc/
+COPY modules.d /
+COPY main.py logger_helper.py filebeat.docker.yml /
 
 WORKDIR /
 # Set Running Env by -e RABBITMQ_HOST=xxx ...
 
-ENTRYPOINT ["supervisord", "--configuration", "/etc/supervisord.conf"]
+CMD ["supervisord", "--configuration", "/etc/supervisord.conf"]
 

@@ -13,9 +13,7 @@ from json.decoder import JSONDecodeError
 import logging
 import logging.handlers
 
-import asyncio
-from aio_pika import connect_robust, Channel, Message, DeliveryMode, ExchangeType
-from aio_pika.pool import Pool
+import pika
 
 import argparse
 from subprocess import Popen, PIPE
@@ -26,26 +24,27 @@ class Sender(object):
     '''Send logs to RabbitMQ
     '''
 
-    def __init__(self, loop):
+    def __init__(self):
         '''init begin/end points
 
         :param pika connection: Connection of RabbitMQ
         '''
-        self.loop = loop
+        self.exchange_name='task_exchange'
         self.logger = init_logger('Sender')
         self.logger.warning('init Sender ...')
-        self.__init_pools()
+        self.__init_connection()
 
-    def __init_pools(self):
-        '''init connection pooling
+    def __init_connection(self):
+        '''init connection
         '''
-        def get_connection():
-            self.logger.warning('AMQP_URI=%s' % os.getenv(
+        self.logger.warning('init connection...\nAMQP_URI=%s' % os.getenv(
                 "AMQP_URI", "amqp://guest:guest@192.168.130.215/"))
-            return connect_robust(os.getenv("AMQP_URI", "amqp://guest:guest@192.168.130.215/"))
 
-        self.connection_pool = Pool(
-            get_connection, max_size=5, loop=self.loop)
+        self.connection = pika.BlockingConnection(pika.URLParameters(os.getenv("AMQP_URI", "amqp://guest:guest@192.168.130.215/")))
+        self.channel = self.connection.channel()
+        self.channel.exchange_declare(exchange=self.exchange_name,
+                                        exchange_type='topic',
+                                        durable=True)
 
     def _run(self, command):
         '''start a subprocess and return stdout
@@ -102,54 +101,42 @@ class Sender(object):
             else:
                 self.logger.error('Failed to send: err=%r, msg=%s' % (ex, msg))
 
-    async def run(self, verbose):
+    def run(self, verbose):
         '''start a subprocess and read from it's stdout
         if can parse to msg, then send to rabbitmq
         '''
+        # declare exchange
 
-        # https://aio-pika.readthedocs.io/en/latest/quick-start.html#connection-pooling
-        async def get_channel() -> Channel:
-            async with self.connection_pool.acquire() as connection:
-                return await connection.channel(publisher_confirms=False)
-        channel_pool = Pool(get_channel, max_size=20, loop=self.loop)
+        try:
+            for line in self._run(os.getenv("FILEBEAT_CMD", "filebeat -c filebeat.docker.yml")):
+                msg = self.parse_msg(line, verbose)
+                if msg:
 
-        async with channel_pool.acquire() as channel:  # type: aio_pika.Channel
+                    try:
+                        key = '%(HosCode)s.task.%(Product)s.%(Level)s.%(Module)s.%(Action)s' % msg
+                    except KeyError as er:
+                        self.logger.error('Failed to Generate Routing Key: %r' % er)
+                        continue
 
-            logs_exchange = await channel.declare_exchange(
-                'task_exchange',
-                ExchangeType.TOPIC,
-                durable=True
-            )
+                    # Sending the message
+                    try:
+                        self.channel.basic_publish(exchange=self.exchange_name, routing_key=key, body=json.dumps(msg))
+                    except Exception as ex:
+                        self.logger.error('Sent failed, err=%r'%ex)
+                        self.logger.error('key=[%s], msg=%r' % (key, msg))
+                        self.__init_connection()
+                        continue
 
-            try:
-                for line in self._run(os.getenv("FILEBEAT_CMD", "filebeat -c filebeat.docker.yml")):
-                    msg = self.parse_msg(line, verbose)
-                    if msg:
+                    self.logger.debug('Sent: key=[%s], msg=%r' % (key, msg))
 
-                        try:
-                            key = '%(HosCode)s.task.%(Product)s.%(Level)s.%(Module)s.%(Action)s' % msg
-                        except KeyError as er:
-                            self.logger.error('Failed to Generate Routing Key: %r' % er)
-                            continue
-
-                        # Sending the message
-                        await logs_exchange.publish(
-                            Message(
-                                bytes(json.dumps(msg), 'utf-8'),
-                                delivery_mode=DeliveryMode.PERSISTENT
-                            ),
-                            routing_key=key)
-
-                        self.logger.debug('Sent: key=[%s], msg=%r' % (key, msg))
-
-                        # await channel.close()
-                        
-            except KeyboardInterrupt:
-                self.logger.error('Exit by Interrupt ...')
-                sys.exit(0)
-            except Exception as ex:
-                self.logger.error('Exit by err=%r'%ex)
-                sys.exit(1)
+                    # await channel.close()
+                    
+        except KeyboardInterrupt:
+            self.logger.error('Exit by Interrupt ...')
+            sys.exit(0)
+        except Exception as ex:
+            self.logger.error('Exit by err=%r'%ex)
+            sys.exit(1)
 
 
 def init_logger(name):
@@ -183,6 +170,5 @@ if __name__ == '__main__':
     if(args.test):
         print2console(args.number)
     else:
-        loop = asyncio.get_event_loop()
-        sender = Sender(loop)
-        loop.run_until_complete(sender.run(verbose=args.verbose))
+        sender = Sender()
+        sender.run(args.verbose)
