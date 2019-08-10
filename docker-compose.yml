@@ -1,53 +1,95 @@
-version: "3"
+version: "2.2"
 services:
-  web:
-    image: nginx
-    ports:
-      - "10080:80"
   
-  filebeat:
-    image: docker.elastic.co/beats/filebeat:7.2.0
-    volumes:
-      # config of filebeat
-      - ./filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro
-      # needed to persist filebeat tracking data :
-      - "filebeat_data:/usr/share/filebeat/data:rw"
-      # needed to access all docker logs (read only) :
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      # needed to access additional informations about containers:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-    - strict.perms=false
-    restart: always
+  # filebeat:
+  #   image: docker.elastic.co/beats/filebeat:7.2.0
+  #   volumes:
+  #     # config of filebeat
+  #     - ./filebeat/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro
+  #     # needed to persist filebeat tracking data :
+  #     - "filebeat_data:/usr/share/filebeat/data:rw"
+  #     # needed to access all docker logs (read only) :
+  #     - /var/lib/docker/containers:/var/lib/docker/containers:ro
+  #     # needed to access additional informations about containers:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #   environment:
+  #   - strict.perms=false
+  #   restart: always
+  #   networks:
+  #     - es72net
 
   elasticsearch:
-    image: hub.infervision.com/vendor/elasticsearch:7.2.0
-    ports:
-      - 9200:9200
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.2.0
+    container_name: es72_01
     environment:
-      - node.name=elasticsearch
       - cluster.name=docker-cluster
+      - node.name=es72_01
       - bootstrap.memory_lock=true
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-  #      - xpack.security.enabled=true
-      - network.host=0.0.0.0
-      - cluster.initial_master_nodes=elasticsearch
+      - discovery.seed_hosts=es72_01,es72_02
+      - cluster.initial_master_nodes=es72_01,es72_02
     ulimits:
-        memlock:
-            soft: -1
-            hard: -1
+      memlock:
+        soft: -1
+        hard: -1
     volumes:
-      - /opt/local/data/EFK/es_data:/usr/share/elasticsearch/data
-    restart: always
+      - es72data1:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    networks:
+      - es72net
+  elasticsearch2:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.2.0
+    container_name: es72_02
+    environment:
+      - cluster.name=docker-cluster
+      - node.name=es72_02
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - discovery.seed_hosts=es72_01,es72_02
+      - cluster.initial_master_nodes=es72_01,es72_02
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es72data2:/usr/share/elasticsearch/data
+    networks:
+      - es72net
 
   kibana:
-    image: hub.infervision.com/vendor/kibana:7.2.0
-    links:
-      - elasticsearch
+    image: docker.elastic.co/kibana/kibana:7.2.0
+    container_name: kibana72
     ports:
       - 5601:5601
+    environment:
+      - I18N_LOCALE=zh-CN
+      - XPACK_GRAPH_ENABLED=true
+      - TIMELION_ENABLED=true
+      - XPACK_MONITORING_COLLECTION_ENABLED="true"
     restart: always
+    networks:
+      - es72net
+
+  # cerebro is an open source(MIT License) elasticsearch web admin tool built using Scala, Play Framework, AngularJS and Bootstrap.
+  cerebro:
+    image: lmenezes/cerebro:0.8.4
+    container_name: cerebro
+    ports:
+      - "9000:9000"
+    command:
+      - -Dhosts.0.host=http://elasticsearch:9200
+    networks:
+      - es72net
 
 volumes:
-  # create a persistent volume for Filebeat
+  # create a persistent volume for Elasticsearch
   filebeat_data:
+  es72data1:
+    driver: local
+  es72data2:
+    driver: local
+
+networks:
+  es72net:
+    driver: bridge
