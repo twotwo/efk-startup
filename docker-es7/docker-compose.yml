@@ -1,0 +1,42 @@
+version: "2.3"
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.3.2
+    ports:
+      - 9200:9200
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=docker-cluster
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=true
+      - network.host=0.0.0.0
+      - cluster.initial_master_nodes=elasticsearch
+    ulimits:
+        memlock:
+            soft: -1
+            hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    restart: always
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.3.2
+    links:
+      - elasticsearch
+    ports:
+      - 5601:5601
+    environment:
+      - I18N_LOCALE=zh-CN
+      - XPACK_GRAPH_ENABLED=true
+      - TIMELION_ENABLED=true
+      - XPACK_MONITORING_COLLECTION_ENABLED="true"
+    restart: always
+    depends_on: ['elasticsearch']
+
+volumes:
+  # create a persistent volume for Elasticsearch
+  es_data:
+    driver: local
